@@ -11,6 +11,8 @@ import os
 
 import requests
 
+from . import credentials
+
 INTERNAL_API_URL = "https://open.feedcoopapi.com/search_api/web_search"
 TRAFFIC_TAG_HEADER = "X-Traffic-Tag"
 TRAFFIC_TAG_VALUE = "skill_web_search_common"
@@ -47,12 +49,15 @@ def _build_body(query, count=8, auth_level=0):
     return body
 
 
-def search(query, count=8, auth_level=0):
-    """返回 [{title, site, auth, url, summary}]。失败返回空列表，不抛异常。"""
+def search(query, count=8, auth_level=0, raise_on_error=False):
+    """返回 [{title, site, auth, url, summary}]。默认失败返回空列表不抛异常；
+    raise_on_error=True 时抛出（用于 key 连通性验证，区分「key 错」和「无结果」）。"""
     _ensure_env()
-    api_key = os.environ.get("WEB_SEARCH_API_KEY", "").strip()
+    api_key = (credentials.search_key() or "").strip()
     if not api_key:
-        print("[search] 未配置 WEB_SEARCH_API_KEY，跳过搜索")
+        if raise_on_error:
+            raise RuntimeError("缺少豆包搜索 key")
+        print("[search] 未配置豆包搜索 key：请在网页「设置」填入，或服务端配置 WEB_SEARCH_API_KEY")
         return []
     try:
         body = _build_body(query, count=count, auth_level=auth_level)
@@ -68,6 +73,11 @@ def search(query, count=8, auth_level=0):
         )
         resp.raise_for_status()
         data = resp.json()
+        # 豆包对错误 key/额度问题返回 HTTP 200，但错误藏在 ResponseMetadata.Error
+        meta_err = ((data.get("ResponseMetadata") or {}).get("Error")) if isinstance(data, dict) else None
+        if meta_err:
+            raise RuntimeError(
+                f"搜索 API 错误 {meta_err.get('Code') or meta_err.get('CodeN')}: {meta_err.get('Message','')}")
         result_obj = data.get("Result") if isinstance(data, dict) else None
         # 豆包搜索偶发返回 Result:null（限流/空响应），必须兜底
         results = []
@@ -81,5 +91,7 @@ def search(query, count=8, auth_level=0):
             })
         return results
     except Exception as e:  # noqa
+        if raise_on_error:
+            raise
         print(f"[search] 失败: {query!r} -> {e}")
         return []

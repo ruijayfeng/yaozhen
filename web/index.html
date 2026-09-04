@@ -355,6 +355,37 @@ a{color:var(--primary);text-decoration:none;}
 .img-mask .img-close{background:rgba(255,255,255,.16);color:#fff;border:none;border-radius:999px;
   padding:12px 30px;font-size:16px;font-weight:700;}
 
+/* ===== 设置页 ===== */
+.key-field{margin-top:16px;}
+.key-field label{display:block;font-size:13px;font-weight:700;color:var(--ink-6c);margin-bottom:7px;letter-spacing:-.2px;}
+.key-input{position:relative;}
+.key-input input{width:100%;box-sizing:border-box;border:1.5px solid var(--line);border-radius:var(--r-md);
+  padding:13px 44px 13px 14px;font-size:15px;letter-spacing:.3px;color:var(--ink);background:var(--warm);
+  outline:none;transition:border-color .2s;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+.key-input input:focus{border-color:var(--primary);background:#fff;}
+.key-input .eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:32px;height:32px;
+  border:none;background:transparent;color:var(--ink-48);display:flex;align-items:center;justify-content:center;border-radius:8px;}
+.key-input .eye i{width:18px;height:18px;}
+.key-status{font-size:12px;margin-top:6px;color:var(--ink-48);display:flex;align-items:center;gap:5px;}
+.key-status.set{color:var(--green-deep);font-weight:600;}
+.key-actions{display:flex;gap:10px;margin-top:18px;}
+.key-actions button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;font-size:15px;font-weight:700;
+  padding:13px 0;border-radius:var(--r-pill);letter-spacing:-.3px;}
+.key-actions i{width:17px;height:17px;}
+.ka-primary{background:var(--primary);color:#fff;border:none;box-shadow:0 6px 16px rgba(0,102,204,.28);}
+.ka-primary:active{transform:scale(.97);}
+.ka-ghost{background:var(--bg);color:var(--primary);border:1.5px solid var(--primary-soft);}
+.key-verify-out{margin-top:14px;font-size:13px;line-height:1.6;}
+.key-verify-out .v-row{display:flex;align-items:center;gap:7px;padding:6px 0;}
+.key-verify-out .v-ok{color:var(--green-deep);font-weight:700;}
+.key-verify-out .v-bad{color:var(--red);font-weight:700;}
+.key-verify-out .v-wait{color:var(--ink-48);}
+.key-verify-out i{width:16px;height:16px;}
+.about-card.danger{border:1.5px solid #f3d4d2;}
+.ka-danger{background:#fdeceb;color:var(--red);border:none;border-radius:var(--r-pill);
+  padding:12px 18px;font-size:14px;font-weight:700;display:inline-flex;align-items:center;gap:7px;margin-top:4px;}
+.ka-danger i{width:16px;height:16px;}
+
 .toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(16px);background:rgba(29,29,31,.94);
   color:#fff;font-size:14px;font-weight:500;padding:12px 22px;border-radius:var(--r-pill);z-index:90;opacity:0;
   transition:all .25s;pointer-events:none;letter-spacing:-.2px;max-width:86%;text-align:center;display:flex;align-items:center;gap:7px;}
@@ -503,11 +534,68 @@ input[type=file]{display:none;}
     </div>
   </div>
 
+  <div class="page" id="page-settings">
+    <div class="topbar"><div class="spacer"></div><div class="tb-title">设置</div><div class="spacer"></div></div>
+    <div class="about">
+      <div class="about-card">
+        <h3><i data-lucide="key-round"></i>接入你自己的 API Key</h3>
+        <p class="a-sub">开源版本用你自己的火山引擎账号调用，费用走你的额度，服务方不接触、也不替你付费。</p>
+        <div class="key-field">
+          <label>方舟 LLM Key（推理 / 抽取 / 读图）</label>
+          <div class="key-input">
+            <input type="password" id="arkKey" placeholder="火山方舟 API Key" autocomplete="off" spellcheck="false">
+            <button class="eye" onclick="toggleKey('arkKey',this)"><i data-lucide="eye"></i></button>
+          </div>
+          <div class="key-status" id="arkStatus">未设置</div>
+        </div>
+        <div class="key-field">
+          <label>豆包搜索 Key（联网检索）</label>
+          <div class="key-input">
+            <input type="password" id="searchKey" placeholder="豆包联网搜索 API Key" autocomplete="off" spellcheck="false">
+            <button class="eye" onclick="toggleKey('searchKey',this)"><i data-lucide="eye"></i></button>
+          </div>
+          <div class="key-status" id="searchStatus">未设置</div>
+        </div>
+        <div class="key-actions">
+          <button class="ka-ghost" onclick="verifyKeys()"><i data-lucide="plug-zap"></i>测试连通</button>
+          <button class="ka-primary" onclick="saveKeys()"><i data-lucide="check"></i>保存</button>
+        </div>
+        <div class="key-verify-out" id="verifyOut"></div>
+      </div>
+
+      <div class="about-card">
+        <h3><i data-lucide="shield-check"></i>Key 怎么被使用</h3>
+        <p class="about-note">
+          · Key 只保存在<b>你这台设备的浏览器</b>（localStorage），不上传到任何数据库；<br>
+          · 每次核查时，浏览器把 Key 随请求<b>临时捎给本服务</b>，服务端仅在内存中用于调用火山引擎、用完即弃，<b>不写盘、不记日志</b>；<br>
+          · 你也可以什么都不填——若服务端自己配置了 Key，会自动兜底使用；<br>
+          · 建议在 <b>HTTPS</b> 或本机 localhost 下使用，避免明文传输。
+        </p>
+      </div>
+
+      <div class="about-card">
+        <h3><i data-lucide="book-open"></i>去哪申请 Key</h3>
+        <p class="about-note">
+          · <b>方舟 LLM</b>：火山引擎方舟控制台创建 API Key（Doubao 模型）；<br>
+          · <b>豆包搜索</b>：火山引擎「联网搜索 / Search Infinity」控制台开通并取 Key；<br>
+          · 两个 Key 通常可在同一火山账号下获取，填入后点「测试连通」即可。
+        </p>
+      </div>
+
+      <div class="about-card danger">
+        <h3><i data-lucide="trash-2"></i>清除本机 Key</h3>
+        <p class="about-note">清除后，浏览器里保存的 Key 会被删除。</p>
+        <button class="ka-danger" onclick="clearKeys()"><i data-lucide="eraser"></i>清除已保存的 Key</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 底部 tab bar -->
   <div class="tabbar" id="tabbar">
     <button class="tab active" data-tab="home" onclick="nav('home')"><i data-lucide="search"></i>核查</button>
     <button class="tab" data-tab="history" onclick="nav('history')"><i data-lucide="history"></i>记录</button>
     <button class="tab" data-tab="about" onclick="nav('about')"><i data-lucide="info"></i>关于</button>
+    <button class="tab" data-tab="settings" onclick="nav('settings')"><i data-lucide="settings"></i>设置</button>
   </div>
 
   <!-- 长辈卡片 sheet -->
@@ -579,7 +667,7 @@ function fillSample(m){
 }
 
 /* ---------- 导航 ---------- */
-const TAB_PAGES=['home','history','about'];
+const TAB_PAGES=['home','history','about','settings'];
 function nav(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('show'));
   $('page-'+page).classList.add('show');
@@ -588,8 +676,49 @@ function nav(page){
   $('tabbar').classList.toggle('hidden', !isTab);
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===page));
   if(page==='history') renderHistory();
+  if(page==='settings') loadKeysToForm();
   closeSheet();
   refreshIcons();
+}
+
+/* ---------- API Key（BYOK，存本机浏览器） ---------- */
+const KEY_ARK='yaozhen_ark_key', KEY_SEARCH='yaozhen_search_key';
+function getKeys(){ return {ark:localStorage.getItem(KEY_ARK)||'', search:localStorage.getItem(KEY_SEARCH)||''}; }
+function authHeaders(){ const k=getKeys(), h={}; if(k.ark) h['X-Ark-Key']=k.ark; if(k.search) h['X-Search-Key']=k.search; return h; }
+function loadKeysToForm(){ $('arkKey').value=getKeys().ark; $('searchKey').value=getKeys().search; refreshKeyStatus(); $('verifyOut').innerHTML=''; }
+function _setStatus(id,has){ const el=$(id);
+  if(has){ el.textContent='已保存（•••• 存于本机）'; el.classList.add('set'); }
+  else { el.textContent='未设置'; el.classList.remove('set'); } }
+function refreshKeyStatus(){ const k=getKeys(); _setStatus('arkStatus',!!k.ark); _setStatus('searchStatus',!!k.search); }
+function toggleKey(id){ const inp=$(id); inp.type = inp.type==='password'?'text':'password'; }
+function saveKeys(){
+  localStorage.setItem(KEY_ARK,$('arkKey').value.trim());
+  localStorage.setItem(KEY_SEARCH,$('searchKey').value.trim());
+  refreshKeyStatus(); toast('check','Key 已保存到本机浏览器');
+}
+function clearKeys(){
+  localStorage.removeItem(KEY_ARK); localStorage.removeItem(KEY_SEARCH);
+  $('arkKey').value=''; $('searchKey').value=''; $('verifyOut').innerHTML=''; refreshKeyStatus();
+  toast('eraser','已清除本机 Key');
+}
+function _vRow(status,label){
+  if(status==='ok') return `<div class="v-row v-ok"><i data-lucide="check-circle-2"></i>${label}：连通正常</div>`;
+  if(status==='empty') return `<div class="v-row v-wait"><i data-lucide="alert-circle"></i>${label}：连通但无结果（查 Key 权限/额度）</div>`;
+  if(status==='fail') return `<div class="v-row v-bad"><i data-lucide="x-circle"></i>${label}：验证失败（Key 错误或无权限）</div>`;
+  return '';
+}
+async function verifyKeys(){
+  const ark=$('arkKey').value.trim(), search=$('searchKey').value.trim();
+  localStorage.setItem(KEY_ARK,ark); localStorage.setItem(KEY_SEARCH,search); refreshKeyStatus();
+  const out=$('verifyOut');
+  out.innerHTML='<div class="v-wait"><i data-lucide="loader-2" class="spin"></i> 正在测试连通性…</div>'; refreshIcons();
+  try{
+    const r=await fetch('/api/verify-keys',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ark_key:ark,search_key:search})});
+    const d=await r.json();
+    out.innerHTML=_vRow(d.search,'豆包搜索')+_vRow(d.ark,'方舟 LLM')||'<div class="v-wait">请至少填入一个 Key</div>';
+    refreshIcons();
+  }catch(e){ out.innerHTML=`<div class="v-bad">测试失败：${esc(e.message)}</div>`; }
 }
 
 /* ---------- 发起核查 ---------- */
@@ -605,7 +734,8 @@ async function startCheck(){
   $('liveSource').style.display='none'; $('thinking').classList.add('show'); claimIdx=-1;
   refreshIcons();
   try{
-    const r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await fetch('/api/check',{method:'POST',
+      headers:{'Content-Type':'application/json', ...authHeaders()},
       body:JSON.stringify({kind,content})});
     const d=await r.json();
     if(d.error){ showError(d.error); return; }

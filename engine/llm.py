@@ -12,6 +12,8 @@ import threading
 import time
 import requests
 
+from . import credentials
+
 ARK_BASE = "https://ark.cn-beijing.volces.com/api/plan/v3"
 MODEL = "ark-code-latest"
 
@@ -49,8 +51,9 @@ class LLMError(RuntimeError):
 
 
 def _call(messages, max_tokens=2000, timeout=120, retries=2):
-    if not API_KEY:
-        raise LLMError("缺少 ARK API key（HERMES_CUSTOM_ARK_CN_BEIJING_VOLCES_COM_API_KEY）")
+    api_key = credentials.ark_key()
+    if not api_key:
+        raise LLMError("缺少方舟 LLM key：请在网页「设置」里填入 ARK key，或在服务端配置 ARK_API_KEY")
     payload = {
         "model": MODEL,
         "thinking": {"type": "disabled"},
@@ -59,7 +62,7 @@ def _call(messages, max_tokens=2000, timeout=120, retries=2):
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     last_err = None
     with _LLM_LOCK:  # 串行化：避免并发请求触发 Ark 端点 hang/限流
         for attempt in range(retries + 1):

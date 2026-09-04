@@ -9,12 +9,13 @@ import queue
 import threading
 import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine.run import run_check
+from engine import credentials, llm, search as search_mod
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(BASE, "web")
@@ -30,9 +31,11 @@ class CheckReq(BaseModel):
     image: str = ""       # data URI 或 base64（image 模式）
 
 
-def _worker(job_id, kind, content):
+def _worker(job_id, kind, content, ark_key, search_key):
     job = JOBS[job_id]
     try:
+        # 请求级凭证（BYOK）：本工作线程内生效，用完随线程回收，不落盘
+        credentials.use_keys(ark_key=ark_key, search_key=search_key)
         report = run_check(kind, content, job["events"])
         job["report"] = report
     except Exception as e:  # noqa
@@ -41,21 +44,55 @@ def _worker(job_id, kind, content):
         job["error"] = str(e)
         job["events"].append({"type": "error", "icon": "⚠️",
                               "title": "核查中断", "detail": str(e)[:120]})
+    finally:
+        credentials.clear()
     job["done"] = True
 
 
 @app.post("/api/check")
-def check(req: CheckReq):
+def check(req: CheckReq, request: Request):
     content = (req.content or req.image or "").strip()
     if not content:
         return {"error": "内容为空"}
     kind = req.kind
     if not kind:
         kind = "url" if content.startswith("http") else ("image" if content.startswith("data:image") or len(content) > 2000 else "text")
+    # 用户自带 key（BYOK），从请求头取；空则后端回落到环境变量
+    ark_key = request.headers.get("x-ark-key", "").strip()
+    search_key = request.headers.get("x-search-key", "").strip()
     job_id = uuid.uuid4().hex[:12]
     JOBS[job_id] = {"events": [], "done": False, "report": None, "error": None}
-    threading.Thread(target=_worker, args=(job_id, kind, content), daemon=True).start()
+    threading.Thread(target=_worker, args=(job_id, kind, content, ark_key, search_key),
+                     daemon=True).start()
     return {"job_id": job_id}
+
+
+class VerifyReq(BaseModel):
+    ark_key: str = ""
+    search_key: str = ""
+
+
+@app.post("/api/verify-keys")
+def verify_keys(req: VerifyReq):
+    """轻量验证用户填的 key 是否可用（各发一个最小请求，不打印 key）。"""
+    out: dict = {"ark": None, "search": None}
+    credentials.use_keys(ark_key=req.ark_key, search_key=req.search_key)
+    if req.search_key.strip():
+        try:
+            r = search_mod.search("人民日报", count=1, raise_on_error=True)
+            out["search"] = "ok" if r else "empty"
+        except Exception:
+            out["search"] = "fail"
+    if req.ark_key.strip():
+        try:
+            llm.chat_json_messages(
+                [{"role": "user", "content": '只输出 JSON：{"ok":1}'}],
+                max_tokens=10, timeout=40, retries=0)
+            out["ark"] = "ok"
+        except Exception:
+            out["ark"] = "fail"
+    credentials.clear()
+    return out
 
 
 @app.get("/api/stream/{job_id}")
