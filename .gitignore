@@ -16,5 +16,10 @@ scripts/last_report.json
 # 测试截图
 mockup/shots/
 
+# 旧版文档截图（v1 桌面报告，已被移动端取代）
+docs_image_flow.png
+docs_report_bottom.png
+docs_report_top.png
+
 # 系统
 .DS_Store
