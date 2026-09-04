@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 凭证（绝不入库）
+.env
+*.env.local
+
+# 评测/运行产物
+scripts/eval_result.json
+scripts/eval_gray.json
+scripts/last_report.json
+
+# 测试截图
+mockup/shots/
+
+# 系统
+.DS_Store

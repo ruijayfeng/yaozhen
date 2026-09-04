@@ -1,0 +1,94 @@
+# 谣侦 yaozhen · 家庭群消息验真
+
+> 爸妈在家庭群里转的养生/健康消息，先查，再转。
+> 一个由 **agent 工具循环**驱动的事实核查工具：模型自己决定搜什么、要不要打开原文、信源打架找谁裁决，每条结论都附**权威出处**，查不到就明说「查无实据」。
+
+- **移动端 Web App**：底部 Tab（核查 / 记录 / 关于），Lucide 图标，Apple HIG 风格，长辈卡片一键生成分享图。
+- **三种输入**：直接贴文字、丢公众号/网页链接、上传群聊截图（多模态 OCR）。
+- **诚实优先**：宁可说「查无实据」，也不靠模型内部知识硬判；无权威源支撑的判决会被后端强制降级。
+
+## 它怎么工作
+
+```
+输入(文字/链接/截图)
+   └─ 抽取可核查主张 (LLM)
+        └─ 对每条主张跑 agent 工具循环 ─────────────┐
+              模型每轮返回一个动作：                  │
+                search   → 豆包深度搜索(结果带权威分级) │
+                open_url → 打开原文全文核对(≤2次)      │  最多 6 步
+                judge    → 下判决 + 证据卡            │
+        ─────────────────────────────────────────┘
+   └─ 防幻觉证据清洗（后端硬约束）
+   └─ 汇总报告 + 长辈版大白话卡片
+```
+
+**防幻觉是代码兜底，不靠 prompt 自觉：**
+
+1. 证据链接必须真实出现在搜索结果里，**模型编造的 URL 直接丢弃**；
+2. 证据引文（quote）必须逐字命中真实摘要/正文，对不上就清空；
+3. 信源按 **A 权威 / B 可信 / C 自媒体** 分级；已有 ≥2 条 A/B 级信源时，C 级自媒体不进证据链；
+4. **没有 A/B 级权威源时，「谣言 / 属实 / 夸大」判决一律强制降级为「查无实据」**——防止模型仅凭自媒体下结论。
+
+## 快速开始
+
+```bash
+# 1. 安装依赖
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# 2. 配置凭证（火山引擎）
+cp .env.example .env
+#   编辑 .env 填入 ARK_API_KEY（方舟 Doubao）和 WEB_SEARCH_API_KEY（豆包搜索）
+
+# 3. 启动
+PORT=8770 .venv/bin/python app.py
+#   打开 http://127.0.0.1:8770
+```
+
+> 手机上用：同一局域网访问 `http://<你电脑的IP>:8770`，或部署到任意服务器。
+
+## 配置
+
+| 环境变量 | 说明 |
+|---|---|
+| `ARK_API_KEY` | 火山方舟 API Key（Doubao-Seed-Evolving），用于推理/抽取/视觉 |
+| `ARK_API_BASE` | 可选，覆盖默认端点 |
+| `ARK_MODEL` | 可选，覆盖默认模型 `ark-code-latest` |
+| `WEB_SEARCH_API_KEY` | 火山引擎豆包联网搜索（Search Infinity）Key |
+
+## 目录结构
+
+```
+app.py               FastAPI + SSE（实时 agent 事件流）
+engine/
+  run.py             主编排：抽取 → 逐条核查 → 汇总 + 长辈卡片
+  agent.py           agent 工具循环（search / open_url / judge）+ 防幻觉清洗
+  authority.py       信源 A/B/C 权威分级
+  search.py          豆包联网搜索封装（自包含）
+  fetch.py           网页/公众号正文抓取
+  llm.py             方舟 LLM 客户端（全局串行锁，规避并发限流）
+  pipeline.py        主张抽取（文本 / 视觉 OCR）
+web/                 移动端前端（index.html + vendor/ 本地图标与截图库）
+scripts/             评测与冒烟脚本
+static/sample_chat.png  群聊截图测试素材
+```
+
+## 评测
+
+```bash
+.venv/bin/python scripts/eval_batch.py   # 10 条基础用例（谣言/真消息/半真半假/无关）
+.venv/bin/python scripts/eval_gray.py    # 灰色地带假阳性压测
+.venv/bin/python scripts/smoke_agent.py "一条养生说法"
+```
+
+当前内部测试：基础 10 例 + 灰色 8 例（含「烫水/咸鱼/熬夜致癌」等听起来像谣言、实则有据的陷阱题），**0 假阳性、0 漏判**；文字/链接/截图三条输入链路均端到端跑通。
+
+## 已知局限（诚实清单）
+
+- agent 偏保守：证据充分时常 1 次搜索即下判决，较少主动 `open_url` 深挖复查；
+- 抖音等短视频链接解析尚未接入（视频号封闭，需走截图 OCR）；
+- 测试样本仍偏典型，长尾/刚出现的新说法需要持续压测。
+
+## License
+
+MIT

@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>谣侦 yaozhen · Apple HIG 高保真交互稿</title>
+<style>
+/* ============================================================
+   设计令牌 —— 严格取自 getdesign add apple 产出的 DESIGN.md
+   唯一例外：判决语义色采用 iOS HIG System Colors（红/橙/绿/灰），
+   只承载「判决结果」这一信息层；所有可交互元素仍只用 Action Blue。
+   ============================================================ */
+:root{
+  /* colors */
+  --primary:#0066cc; --primary-focus:#0071e3; --primary-on-dark:#2997ff;
+  --ink:#1d1d1f; --body-muted:#cccccc; --ink-80:#333333; --ink-48:#7a7a7a;
+  --divider-soft:#f0f0f0; --hairline:#e0e0e0;
+  --canvas:#ffffff; --parchment:#f5f5f7; --pearl:#fafafc;
+  --tile-1:#272729; --tile-2:#2a2a2c; --tile-3:#252527; --black:#000000;
+  --chip-gray:rgba(210,210,215,.64);
+  /* iOS HIG 语义色（判决专用，非交互色） */
+  --sys-red:#ff3b30; --sys-red-bg:#fff2f1; --sys-orange:#ff9500; --sys-orange-bg:#fff8ec;
+  --sys-green:#34c759; --sys-green-bg:#eefaf1; --sys-gray:#8e8e93; --sys-gray-bg:#f2f2f4;
+  /* type */
+  --sf-display:"SF Pro Display",system-ui,-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+  --sf-text:"SF Pro Text",system-ui,-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+  /* radius */
+  --r-sm:8px; --r-md:11px; --r-lg:18px; --r-pill:9999px;
+  /* shadow: 全系统唯一一处投影，只给「产品感」主体 */
+  --product-shadow:rgba(0,0,0,.22) 3px 5px 30px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  font-family:var(--sf-text); color:var(--ink);
+  background:var(--parchment);
+  display:flex; flex-direction:column; align-items:center;
+  padding:28px 16px 60px;
+  -webkit-font-smoothing:antialiased;
+}
+/* ---------- 演示用控制条（不属于产品 UI） ---------- */
+.demo-bar{display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap;justify-content:center;}
+.demo-bar .tag{font-size:12px;color:var(--ink-48);letter-spacing:-.12px;margin-right:4px;}
+.demo-chip{
+  font-family:var(--sf-text);font-size:14px;letter-spacing:-.224px;
+  background:var(--pearl);color:var(--ink-80);border:1px solid var(--divider-soft);
+  border-radius:var(--r-md);padding:8px 14px;cursor:pointer;min-height:36px;
+  transition:transform .12s ease;
+}
+.demo-chip:active{transform:scale(.95);}
+.demo-chip.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+/* ---------- iPhone 机身 ---------- */
+.phone{
+  width:390px;max-width:100%;background:var(--canvas);
+  border-radius:54px;box-shadow:var(--product-shadow);
+  border:10px solid #111;position:relative;overflow:hidden;
+  height:min(844px, calc(100vh - 130px));
+  display:flex;flex-direction:column;
+}
+.screen{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;background:var(--canvas);}
+.screen::-webkit-scrollbar{display:none;}
+/* iOS 状态栏 */
+.statusbar{
+  height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;font-size:14px;font-weight:600;letter-spacing:-.2px;color:var(--ink);
+  background:transparent;position:relative;z-index:30;
+}
+.statusbar.on-dark{color:#fff;}
+.statusbar .notch{position:absolute;left:50%;top:8px;transform:translateX(-50%);width:120px;height:28px;background:#111;border-radius:var(--r-pill);}
+.sb-icons{display:flex;gap:5px;align-items:center;font-size:12px;}
+/* 毛玻璃导航栏（sub-nav-frosted 语法） */
+.appnav{
+  position:sticky;top:0;z-index:20;
+  background:rgba(245,245,247,.8);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+  height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  border-bottom:1px solid rgba(0,0,0,.04);
+}
+.appnav .title{font-family:var(--sf-display);font-size:21px;font-weight:600;letter-spacing:.23px;}
+.appnav .nav-btn{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+  background:none;border:none;cursor:pointer;color:var(--primary);font-size:16px;
+}
+.appnav .nav-btn.left{left:4px;} .appnav .nav-btn.right{right:4px;}
+.appnav.on-dark{background:rgba(37,37,39,.8);border-bottom-color:rgba(255,255,255,.06);}
+.appnav.on-dark .title{color:#fff;}
+
+/* ============================================================
+   视图一：输入（浅色 hero tile）
+   ============================================================ */
+.view{display:none;animation:fade .35s ease;}
+.view.show{display:block;}
+@keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+
+.hero{padding:34px 24px 40px;text-align:center;background:var(--canvas);}
+.hero h1{
+  font-family:var(--sf-display);font-size:34px;font-weight:600;line-height:1.12;
+  letter-spacing:-.374px;margin-bottom:12px;
+}
+.hero h1 .accent{color:var(--primary);}
+.hero .lead{font-size:21px;font-weight:400;line-height:1.34;letter-spacing:.1px;color:var(--ink-80);margin-bottom:28px;}
+.hero .lead strong{font-weight:600;color:var(--ink);}
+
+/* 输入框：search-input 语法（pill、44px+、hairline） */
+.composer{
+  background:var(--canvas);border:1px solid rgba(0,0,0,.08);border-radius:var(--r-pill);
+  padding:6px 6px 6px 22px;display:flex;align-items:center;gap:10px;
+  min-height:52px;box-shadow:0 1px 2px rgba(0,0,0,.03);
+}
+.composer .mag{color:var(--ink-48);font-size:16px;flex-shrink:0;}
+.composer input{
+  flex:1;border:none;outline:none;font-family:var(--sf-text);font-size:17px;
+  letter-spacing:-.374px;color:var(--ink);background:transparent;min-width:0;
+}
+.composer input::placeholder{color:var(--ink-48);}
+.composer .go{
+  flex-shrink:0;background:var(--primary);color:#fff;border:none;border-radius:var(--r-pill);
+  font-family:var(--sf-text);font-size:17px;font-weight:400;letter-spacing:-.3px;
+  padding:11px 22px;cursor:pointer;transition:transform .12s ease;min-height:40px;
+}
+.composer .go:active{transform:scale(.95);}
+.composer .go:disabled{background:var(--hairline);color:var(--ink-48);cursor:default;}
+
+/* 输入模式 chips：configurator-option-chip 语法 */
+.mode-row{display:flex;gap:8px;justify-content:center;margin:16px 0 0;flex-wrap:wrap;}
+.mode-chip{
+  background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-pill);
+  font-size:14px;letter-spacing:-.224px;color:var(--ink);padding:10px 16px;
+  cursor:pointer;display:flex;align-items:center;gap:6px;transition:transform .12s;
+  min-height:40px;
+}
+.mode-chip:active{transform:scale(.95);}
+.mode-chip.sel{border:2px solid var(--primary-focus);padding:9px 15px;color:var(--ink);font-weight:600;}
+.drop-hint{
+  margin-top:14px;font-size:12px;color:var(--ink-48);letter-spacing:-.12px;line-height:1.4;
+}
+/* 示例：pearl capsule */
+.samples{padding:8px 24px 30px;background:var(--parchment);}
+.samples .lbl{font-size:14px;font-weight:600;letter-spacing:-.224px;color:var(--ink-80);margin:18px 0 10px;}
+.sample{
+  width:100%;text-align:left;background:var(--canvas);border:1px solid var(--hairline);
+  border-radius:var(--r-lg);padding:16px 18px;margin-bottom:10px;cursor:pointer;
+  transition:transform .12s ease;font-family:var(--sf-text);
+}
+.sample:active{transform:scale(.98);}
+.sample .st{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-48);margin-bottom:6px;letter-spacing:-.12px;}
+.sample .st .dot{width:6px;height:6px;border-radius:50%;background:var(--primary);}
+.sample .tx{font-size:15px;line-height:1.45;letter-spacing:-.3px;color:var(--ink-80);}
+.sample .tx b{color:var(--ink);font-weight:600;}
+/* 原则区：白色 tile 大字 */
+.principles{padding:44px 24px 48px;background:var(--canvas);text-align:center;}
+.principles h2{font-family:var(--sf-display);font-size:28px;font-weight:600;letter-spacing:.19px;line-height:1.15;margin-bottom:22px;}
+.principle{display:flex;gap:14px;text-align:left;align-items:flex-start;padding:14px 0;}
+.principle .ico{
+  flex-shrink:0;width:44px;height:44px;border-radius:50%;background:var(--chip-gray);
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+}
+.principle .pt{font-size:17px;font-weight:600;letter-spacing:-.374px;line-height:1.24;margin-bottom:2px;}
+.principle .pd{font-size:14px;color:var(--ink-48);line-height:1.43;letter-spacing:-.224px;}
+/* footer 语法 */
+.foot{background:var(--parchment);padding:28px 24px 40px;color:var(--ink-48);}
+.foot .fl{font-size:12px;line-height:1.6;letter-spacing:-.12px;margin-bottom:6px;}
+.foot a{color:var(--primary);text-decoration:none;}
+
+/* ============================================================
+   视图二：核查中（dark tile —— 产品「工作中」的暗色幕布）
+   ============================================================ */
+.live{background:var(--tile-1);min-height:100%;color:#fff;padding:8px 0 90px;}
+.live-head{padding:26px 24px 20px;text-align:center;}
+.live-head .kicker{font-size:14px;color:var(--body-muted);letter-spacing:.2px;margin-bottom:10px;}
+.live-head h2{font-family:var(--sf-display);font-size:34px;font-weight:600;letter-spacing:-.374px;line-height:1.15;}
+.live-head .sub{font-size:17px;color:var(--body-muted);margin-top:10px;line-height:1.45;letter-spacing:-.3px;}
+.live-source{
+  margin:18px 24px 0;background:var(--tile-2);border-radius:var(--r-lg);padding:14px 16px;
+  display:flex;gap:10px;align-items:flex-start;
+}
+.live-source .si{font-size:16px;flex-shrink:0;margin-top:2px;}
+.live-source .st{font-size:13px;line-height:1.45;color:var(--body-muted);letter-spacing:-.2px;}
+.live-source .st b{color:#fff;font-weight:600;}
+/* 时间线 */
+.timeline{padding:22px 24px 0;}
+.tl-item{display:flex;gap:14px;opacity:0;transform:translateY(8px);transition:all .35s ease;position:relative;padding-bottom:22px;}
+.tl-item.on{opacity:1;transform:none;}
+.tl-item:last-child{padding-bottom:0;}
+.tl-rail{display:flex;flex-direction:column;align-items:center;flex-shrink:0;width:28px;}
+.tl-dot{
+  width:28px;height:28px;border-radius:50%;background:var(--tile-3);
+  display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;
+  border:1px solid rgba(255,255,255,.12);
+}
+.tl-item.on .tl-dot{background:var(--primary-on-dark);border-color:var(--primary-on-dark);}
+.tl-item.done .tl-dot{background:rgba(255,255,255,.14);border-color:transparent;}
+.tl-line{width:1.5px;flex:1;background:rgba(255,255,255,.12);margin-top:4px;}
+.tl-item:last-child .tl-line{display:none;}
+.tl-body{padding-top:3px;min-width:0;flex:1;}
+.tl-t{font-size:15px;font-weight:600;letter-spacing:-.3px;line-height:1.35;}
+.tl-item.on .tl-t{color:var(--primary-on-dark);}
+.tl-d{font-size:13px;color:var(--body-muted);line-height:1.45;margin-top:3px;letter-spacing:-.2px;word-break:break-all;}
+.tl-tag{
+  display:inline-block;margin-top:6px;font-size:11px;letter-spacing:-.1px;
+  padding:3px 9px;border-radius:var(--r-pill);background:rgba(255,149,0,.18);color:#ffb84d;
+}
+.tl-tag.ok{background:rgba(52,199,89,.16);color:#5ee689;}
+.tl-tag.blue{background:rgba(41,151,255,.16);color:var(--primary-on-dark);}
+/* 思考呼吸灯 */
+.thinking{display:none;align-items:center;gap:8px;padding:4px 0 0 42px;font-size:13px;color:var(--body-muted);}
+.thinking.show{display:flex;}
+.thinking .dots{display:inline-flex;gap:3px;}
+.thinking .dots i{width:5px;height:5px;border-radius:50%;background:var(--primary-on-dark);animation:bounce 1.2s infinite;}
+.thinking .dots i:nth-child(2){animation-delay:.2s;} .thinking .dots i:nth-child(3){animation-delay:.4s;}
+@keyframes bounce{0%,100%{transform:translateY(0);opacity:.4;}50%{transform:translateY(-4px);opacity:1;}}
+/* live 底部完成条 */
+.live-done{
+  display:none;margin:26px 24px 0;background:var(--tile-3);border-radius:var(--r-lg);
+  padding:20px;text-align:center;
+}
+.live-done.show{display:block;animation:fade .4s ease;}
+.live-done .big{font-family:var(--sf-display);font-size:24px;font-weight:600;letter-spacing:-.3px;margin-bottom:6px;}
+.live-done .sm{font-size:14px;color:var(--body-muted);line-height:1.5;margin-bottom:16px;}
+.btn-white-pill{
+  background:#fff;color:var(--ink);border:none;border-radius:var(--r-pill);
+  font-family:var(--sf-text);font-size:17px;padding:12px 26px;cursor:pointer;
+  transition:transform .12s;min-height:44px;
+}
+.btn-white-pill:active{transform:scale(.95);}
+
+/* ============================================================
+   视图三：报告（浅色 + 判决语义色）
+   ============================================================ */
+.report{padding-bottom:96px;}
+/* 总结论横幅：全宽 tile，用语义色但无渐变 */
+.verdict{padding:44px 24px 40px;text-align:center;}
+.verdict.red{background:var(--sys-red-bg);}
+.verdict .vicon{
+  width:72px;height:72px;border-radius:50%;margin:0 auto 18px;
+  display:flex;align-items:center;justify-content:center;font-size:38px;
+  background:#fff;box-shadow:0 2px 10px rgba(255,59,48,.18);
+}
+.verdict h1{font-family:var(--sf-display);font-size:40px;font-weight:600;letter-spacing:-.28px;line-height:1.1;color:var(--sys-red);}
+.verdict .vlead{font-size:21px;font-weight:400;line-height:1.35;letter-spacing:.1px;color:var(--ink);margin-top:10px;}
+.verdict .vstats{
+  margin-top:18px;display:flex;justify-content:center;gap:0;font-size:12px;color:var(--ink-48);
+  letter-spacing:-.12px;
+}
+.verdict .vstats span{padding:0 12px;border-right:1px solid var(--hairline);}
+.verdict .vstats span:last-child{border-right:none;}
+/* 过程回放折叠 */
+.replay{
+  margin:18px 20px 0;background:var(--canvas);border:1px solid var(--hairline);
+  border-radius:var(--r-lg);overflow:hidden;
+}
+.replay summary{
+  list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;
+  padding:16px 18px;font-size:15px;font-weight:600;letter-spacing:-.3px;
+}
+.replay summary::-webkit-details-marker{display:none;}
+.replay summary .chev{margin-left:auto;color:var(--ink-48);transition:transform .2s;}
+.replay[open] summary .chev{transform:rotate(180deg);}
+.replay .rl{padding:0 18px 14px;font-size:13px;line-height:1.9;color:var(--ink-80);letter-spacing:-.2px;}
+.replay .rl .ok{color:#1d8a3f;font-weight:600;} .replay .rl .warn{color:#c96a00;font-weight:600;}
+/* 说法卡片：store-utility-card 语法 */
+.claims{padding:22px 20px 0;}
+.claims .sec-title{font-family:var(--sf-display);font-size:24px;font-weight:600;letter-spacing:0;line-height:1.1;margin:6px 4px 14px;}
+.claim{
+  background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);
+  padding:20px;margin-bottom:14px;
+}
+.claim-head{display:flex;gap:14px;align-items:flex-start;}
+.badge{
+  flex-shrink:0;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:20px;font-weight:600;color:#fff;
+}
+.badge.red{background:var(--sys-red);} .badge.gray{background:var(--sys-gray);}
+.claim-main{flex:1;min-width:0;}
+.claim-q{font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-.374px;}
+.claim-tag{
+  display:inline-block;margin-top:8px;font-size:12px;font-weight:600;letter-spacing:-.12px;
+  padding:4px 12px;border-radius:var(--r-pill);
+}
+.claim-tag.red{background:var(--sys-red-bg);color:#d70015;}
+.claim-tag.gray{background:var(--sys-gray-bg);color:#5c5c63;}
+.claim-plain{margin-top:12px;font-size:15px;line-height:1.6;letter-spacing:-.3px;color:var(--ink-80);}
+.claim-plain b{color:var(--ink);font-weight:600;}
+.claim-conf{margin-top:10px;font-size:12px;color:var(--ink-48);letter-spacing:-.12px;}
+.claim-conf .bar{display:inline-block;width:60px;height:4px;border-radius:2px;background:var(--divider-soft);vertical-align:middle;margin:0 6px;position:relative;overflow:hidden;}
+.claim-conf .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--primary);border-radius:2px;}
+/* 信源 */
+.sources{margin-top:14px;border-top:1px solid var(--divider-soft);padding-top:12px;}
+.sources .sl{font-size:12px;font-weight:600;color:var(--ink-48);letter-spacing:-.12px;margin-bottom:8px;}
+.src{
+  display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--parchment);
+  border-radius:var(--r-md);margin-bottom:8px;text-decoration:none;
+}
+.src:active{transform:scale(.98);}
+.src .li{color:var(--primary);font-size:14px;margin-top:2px;flex-shrink:0;}
+.src .sname{font-size:14px;font-weight:600;letter-spacing:-.224px;color:var(--ink);line-height:1.35;}
+.src .smeta{font-size:12px;color:var(--ink-48);margin-top:2px;letter-spacing:-.12px;}
+.auth{
+  display:inline-block;font-size:10px;font-weight:600;letter-spacing:0;padding:2px 7px;
+  border-radius:var(--r-pill);background:var(--sys-green-bg);color:#1d8a3f;margin-left:6px;
+  vertical-align:1px;
+}
+/* 原文摘录 */
+.quote{
+  margin-top:10px;background:var(--parchment);border-left:3px solid var(--primary);
+  border-radius:0 var(--r-md) var(--r-md) 0;padding:10px 14px;
+  font-size:13px;line-height:1.6;color:var(--ink-80);letter-spacing:-.2px;
+}
+.quote .qs{display:block;font-size:11px;color:var(--ink-48);margin-bottom:4px;}
+.claim-more{
+  margin-top:12px;width:100%;background:var(--pearl);border:1px solid var(--divider-soft);
+  border-radius:var(--r-md);padding:9px;font-size:13px;color:var(--ink-80);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:6px;transition:transform .12s;
+}
+.claim-more:active{transform:scale(.97);}
+.claim-extra{display:none;margin-top:12px;}
+.claim.open .claim-extra{display:block;animation:fade .3s ease;}
+.claim.open .claim-more .cm-txt::after{content:"收起证据链";}
+.claim:not(.open) .claim-more .cm-txt::after{content:"展开证据链（权威信源 + 原文摘录）";}
+/* 底部悬浮操作条：floating-sticky-bar 语法 */
+.stickybar{
+  position:absolute;left:0;right:0;bottom:0;z-index:25;
+  background:rgba(245,245,247,.82);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+  border-top:1px solid rgba(0,0,0,.06);
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  display:flex;gap:10px;
+}
+.btn-primary-pill{
+  flex:1;background:var(--primary);color:#fff;border:none;border-radius:var(--r-pill);
+  font-family:var(--sf-text);font-size:17px;font-weight:400;letter-spacing:-.3px;
+  padding:12px 18px;cursor:pointer;transition:transform .12s;min-height:48px;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.btn-primary-pill:active{transform:scale(.96);}
+.btn-ghost-pill{
+  background:var(--canvas);color:var(--primary);border:1px solid var(--primary);
+  border-radius:var(--r-pill);font-family:var(--sf-text);font-size:15px;letter-spacing:-.24px;
+  padding:12px 16px;cursor:pointer;transition:transform .12s;min-height:48px;white-space:nowrap;
+}
+.btn-ghost-pill:active{transform:scale(.96);}
+
+/* ============================================================
+   长辈版卡片：iOS 分享式底部弹层
+   ============================================================ */
+.sheet-mask{
+  position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:40;
+  opacity:0;pointer-events:none;transition:opacity .25s;
+}
+.sheet-mask.show{opacity:1;pointer-events:auto;}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;z-index:41;
+  background:var(--canvas);border-radius:24px 24px 0 0;
+  transform:translateY(105%);transition:transform .32s cubic-bezier(.2,.9,.3,1);
+  max-height:88%;display:flex;flex-direction:column;
+}
+.sheet.show{transform:translateY(0);}
+.sheet .grab{width:36px;height:5px;border-radius:3px;background:var(--hairline);margin:8px auto 4px;flex-shrink:0;}
+.sheet .sheet-body{overflow-y:auto;padding:8px 20px 20px;}
+.sheet h3{font-family:var(--sf-display);font-size:21px;font-weight:600;text-align:center;letter-spacing:.2px;margin-bottom:14px;}
+/* 长辈海报本体：暖纸底、超大字、无置信度 */
+.poster{
+  background:#fffdf7;border:1px solid #f0e6d2;border-radius:var(--r-lg);
+  padding:26px 22px;text-align:center;position:relative;
+}
+.poster .p-kicker{font-size:15px;color:#9a7b3f;letter-spacing:2px;margin-bottom:14px;}
+.poster .p-verdict{
+  font-family:var(--sf-display);font-size:44px;font-weight:700;color:var(--sys-red);
+  letter-spacing:2px;line-height:1.1;margin-bottom:16px;
+}
+.poster .p-said{
+  font-size:19px;line-height:1.7;color:#5a4a2a;background:#faf3e3;
+  border-radius:var(--r-md);padding:12px 14px;margin-bottom:16px;text-align:left;
+}
+.poster .p-said::before{content:"消息里说：";color:#9a7b3f;font-size:15px;display:block;margin-bottom:4px;}
+.poster .p-fact{font-size:20px;line-height:1.75;color:#2a2a2a;text-align:left;font-weight:600;}
+.poster .p-fact li{margin-bottom:10px;list-style:none;display:flex;gap:8px;align-items:flex-start;}
+.poster .p-fact li::before{content:"✓";color:#1d8a3f;flex-shrink:0;font-size:18px;}
+.poster .p-src{margin-top:18px;padding-top:12px;border-top:1px dashed #e0d5bb;font-size:13px;color:#9a8b66;line-height:1.6;}
+.poster .p-sign{margin-top:12px;font-size:15px;color:#9a7b3f;}
+.sheet-actions{display:flex;gap:10px;margin-top:16px;}
+.toast{
+  position:absolute;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);
+  background:rgba(29,29,31,.92);color:#fff;font-size:14px;padding:10px 20px;
+  border-radius:var(--r-pill);z-index:50;opacity:0;transition:all .25s;pointer-events:none;
+  letter-spacing:-.2px;white-space:nowrap;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.demo-note{margin-top:16px;font-size:12px;color:var(--ink-48);text-align:center;max-width:390px;line-height:1.6;}
+</style>
+</head>
+<body>
+
+<!-- 演示控制条（非产品 UI） -->
+<div class="demo-bar">
+  <span class="tag">谣侦 · Apple HIG 高保真交互稿（演示数据＝MVP 真实跑通过的案例）</span>
+  <button class="demo-chip active" data-jump="input">① 输入</button>
+  <button class="demo-chip" data-jump="live">② 核查中</button>
+  <button class="demo-chip" data-jump="report">③ 报告</button>
+  <button class="demo-chip" data-jump="card">长辈卡片</button>
+</div>
+
+<div class="phone">
+  <div class="screen" id="screen">
+
+    <!-- 状态栏 -->
+    <div class="statusbar" id="statusbar">
+      <div class="notch"></div>
+      <span>9:41</span>
+      <div class="sb-icons"><span>●●●</span><span>📶</span><span>🔋</span></div>
+    </div>
+
+    <!-- 导航 -->
+    <div class="appnav" id="appnav">
+      <button class="nav-btn left" id="navBack" style="display:none" onclick="goInput()">‹</button>
+      <span class="title">谣侦</span>
+      <button class="nav-btn right" onclick="toast('演示稿：历史记录入口')">≡</button>
+    </div>
+
+    <!-- ============ 视图一：输入 ============ -->
+    <div class="view show" id="view-input">
+      <div class="hero">
+        <h1>家庭群消息<br><span class="accent">先查，再转。</span></h1>
+        <p class="lead">把公众号链接、抖音口令、<br>或群聊截图丢进来——<br><strong>谣侦</strong>逐条深度核查，<br>每条结论都附权威出处。</p>
+
+        <div class="composer">
+          <span class="mag">🔍</span>
+          <input id="composerInput" placeholder="粘贴链接 / 输入说法 / ⌘V 截图" />
+          <button class="go" id="goBtn" onclick="startCheck()" disabled>核查</button>
+        </div>
+
+        <div class="mode-row">
+          <button class="mode-chip sel" data-mode="text">📝 文字说法</button>
+          <button class="mode-chip" data-mode="link">🔗 文章链接</button>
+          <button class="mode-chip" data-mode="img">🖼️ 聊天截图</button>
+        </div>
+        <p class="drop-hint">截图可直接 ⌘V 粘贴 · 支持微信公众号 / 抖音分享</p>
+      </div>
+
+      <div class="samples">
+        <p class="lbl">试试这些 ↓</p>
+        <button class="sample" onclick="fillSample('text')">
+          <div class="st"><span class="dot"></span>群聊文字 · 多条养生说法</div>
+          <div class="tx"><b>「味精加热超过100度会产生致癌物」</b>「隔夜菜含亚硝酸盐吃了一定致癌」「红酒泡洋葱能降血压、代替降压药」……</div>
+        </button>
+        <button class="sample" onclick="fillSample('link')">
+          <div class="st"><span class="dot"></span>公众号文章链接</div>
+          <div class="tx">mp.weixin.qq.com/s/xxxx ——《<b>医生绝对不会碰的6种食物</b>》</div>
+        </button>
+        <button class="sample" onclick="fillSample('img')">
+          <div class="st"><span class="dot"></span>家庭群聊截图（多模态读图）</div>
+          <div class="tx">舅妈转发的三张养生截图，<b>自动读图拆说法</b></div>
+        </button>
+      </div>
+
+      <div class="principles">
+        <h2>查不到，就明说<br>查无实据。</h2>
+        <div class="principle">
+          <div class="ico">🔎</div>
+          <div><div class="pt">深度搜索，不是搜一下</div><div class="pd">每条说法多轮检索、打开原文核对；信源打架时找第三方裁决。</div></div>
+        </div>
+        <div class="principle">
+          <div class="ico">🏛️</div>
+          <div><div class="pt">只认权威信源</div><div class="pd">政府辟谣平台、三甲医院、央媒、科普中国；自媒体说法只作线索。</div></div>
+        </div>
+        <div class="principle">
+          <div class="ico">🤝</div>
+          <div><div class="pt">给长辈留面子</div><div class="pd">转发文案说「这条消息别信」，不说「你被骗了」。</div></div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <p class="fl">谣侦 yaozhen · 深度搜索 + 大模型核查 · 每条结论均附权威出处链接，查不到就明说「查无实据」</p>
+        <p class="fl">结论仅供参考，重大健康问题请遵医嘱。</p>
+      </div>
+    </div>
+
+    <!-- ============ 视图二：核查中（dark tile） ============ -->
+    <div class="view" id="view-live">
+      <div class="live">
+        <div class="live-head">
+          <p class="kicker">正在核查</p>
+          <h2>拆说法 · 搜证据 · 下判决</h2>
+          <p class="sub">模型正在自主决定搜什么、<br>打开哪篇原文核对。过程全程可见。</p>
+        </div>
+        <div class="live-source">
+          <span class="si">📄</span>
+          <span class="st">已读取家庭群转发内容（文字 3 段），<b>拆出 4 条可核查说法</b></span>
+        </div>
+        <div class="timeline" id="timeline"></div>
+        <div class="thinking" id="thinking"><span class="dots"><i></i><i></i><i></i></span><span id="thinkTxt">正在思考下一步…</span></div>
+        <div class="live-done" id="liveDone">
+          <div class="big">✅ 4 条说法核查完成</div>
+          <div class="sm">3 条谣言 · 1 条查无实据<br>检索 23 个网页 · 打开 6 篇原文 · 耗时 55 秒</div>
+          <button class="btn-white-pill" onclick="goReport()">查看判决报告</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 视图三：报告 ============ -->
+    <div class="view" id="view-report">
+      <div class="report">
+        <div class="verdict red">
+          <div class="vicon">🚫</div>
+          <h1>这条别转</h1>
+          <p class="vlead">4 条说法中 3 条查实为谣言，<br>1 条查无实据</p>
+          <div class="vstats">
+            <span>共核查 4 条</span><span>检索 23 个网页</span><span>打开原文 6 篇</span><span>耗时 55 秒</span>
+          </div>
+        </div>
+
+        <details class="replay">
+          <summary>📜 核查过程回放 <span class="chev">⌄</span></summary>
+          <div class="rl">
+            🔍 搜「味精 焦谷氨酸钠 致癌」→ 8 条结果<br>
+            <span class="warn">⚠ 信源分歧：搜狐号称致癌 / 人民网称无毒 → 启动第三方裁决</span><br>
+            📖 打开人民网、科普中国原文核对<br>
+            <span class="ok">✓ 权威源一致：焦谷氨酸钠无毒，味精加热不致癌</span><br>
+            🔍 搜「隔夜菜 亚硝酸盐 致癌」→ 河北省食检院实验数据<br>
+            <span class="ok">✓ 冷藏 24h 亚硝酸盐远低于国标限量；亚硝酸盐本身不致癌</span><br>
+            🔍 搜「红酒泡洋葱 降血压 替代药物」→ 央媒辟谣<br>
+            <span class="ok">✓ 仅为食疗方，不能替代正规治疗</span><br>
+            🔍 搜「量子鞋垫 治糖尿病」→ 0 条权威结果<br>
+            <span class="warn">？ 遍搜权威源无果 → 判「查无实据，先别转」</span>
+          </div>
+        </details>
+
+        <div class="claims">
+          <p class="sec-title">逐条说法</p>
+
+          <!-- 说法 1 -->
+          <div class="claim open">
+            <div class="claim-head">
+              <div class="badge red">✕</div>
+              <div class="claim-main">
+                <div class="claim-q">「味精加热超过 100℃ 会产生致癌物」</div>
+                <span class="claim-tag red">谣言</span>
+                <p class="claim-plain">味精的主要成分是谷氨酸钠，加热后生成的<b>焦谷氨酸钠无毒无害</b>，只是失去鲜味。联合国粮农组织已把味精列为「最安全类别」，无需限量。</p>
+                <p class="claim-conf">置信度
+                  <span class="bar"><i style="width:96%"></i></span>96% · 命中 3 个权威源
+                </p>
+                <div class="claim-extra">
+                  <div class="sources">
+                    <p class="sl">权威出处（点击可查原文）</p>
+                    <a class="src" onclick="toast('演示稿：跳转原文链接')">
+                      <span class="li">🔗</span>
+                      <span><span class="sname">人民网｜味精加热后真的有毒吗？</span><span class="auth">权威媒体</span><br><span class="smeta">people.com.cn · 原文摘录见下</span></span>
+                    </a>
+                    <a class="src" onclick="toast('演示稿：跳转原文链接')">
+                      <span class="li">🔗</span>
+                      <span><span class="sname">科普中国｜味精加热超过 100℃ 会致癌？</span><span class="auth">官方科普平台</span><br><span class="smeta">kepuchina.cn</span></span>
+                    </a>
+                  </div>
+                  <div class="quote">
+                    <span class="qs">人民网 · 原文摘录</span>
+                    「焦谷氨酸钠对人体无毒无害，味精即便加热到 120℃ 也不会产生致癌物质，所谓『味精加热致癌』没有科学依据。」
+                  </div>
+                </div>
+                <button class="claim-more"><span class="cm-txt"></span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 说法 2 -->
+          <div class="claim">
+            <div class="claim-head">
+              <div class="badge red">✕</div>
+              <div class="claim-main">
+                <div class="claim-q">「隔夜菜含亚硝酸盐，吃了一定致癌」</div>
+                <span class="claim-tag red">谣言</span>
+                <p class="claim-plain">说法过于绝对。<b>科学冷藏的隔夜菜亚硝酸盐含量极低</b>，远低于国家标准；且亚硝酸盐本身不致癌，只有长期大量摄入并在特定条件下才可能生成亚硝胺。正常食用、充分加热即可。</p>
+                <p class="claim-conf">置信度
+                  <span class="bar"><i style="width:95%"></i></span>95% · 命中 3 个权威源
+                </p>
+                <div class="claim-extra">
+                  <div class="sources">
+                    <p class="sl">权威出处（点击可查原文）</p>
+                    <a class="src" onclick="toast('演示稿：跳转原文链接')">
+                      <span class="li">🔗</span>
+                      <span><span class="sname">河北广播电视台｜隔夜菜不致癌，关键在科学储存</span><span class="auth">权威媒体</span></span>
+                    </a>
+                    <a class="src" onclick="toast('演示稿：跳转原文链接')">
+                      <span class="li">🔗</span>
+                      <span><span class="sname">河北省食品检验研究院｜酱菜、剩菜中的亚硝酸盐是怎么回事</span><span class="auth">官方检测机构</span></span>
+                    </a>
+                    <a class="src" onclick="toast('演示稿：跳转原文链接')">
+                      <span class="li">🔗</span>
+                      <span><span class="sname">澎湃新闻｜健康真相：隔夜菜真的致癌吗？</span><span class="auth">权威媒体</span></span>
+                    </a>
+                  </div>
+                  <div class="quote">
+                    <span class="qs">河北省食品检验研究院 · 实验数据摘录</span>
+                    「冷藏储存 24 小时的剩菜，亚硝酸盐含量均远低于国家限量标准；彻底加热后食用无致癌风险。」
+                  </div>
+                </div>
+                <button class="claim-more"><span class="cm-txt"></span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 说法 3 -->
+          <div class="claim">
+            <div class="claim-head">
+              <div class="badge red">✕</div>
+              <div class="claim-main">
+                <div class="claim-q">「红酒泡洋葱能降血压、代替降压药」</div>
+                <span class="claim-tag red">谣言</span>
+                <p class="claim-plain">红酒泡洋葱<b>只是民间食疗方，没有可靠临床证据</b>证明其能降压或治疗疾病，更不能替代正规降压治疗。擅自停药可能导致血压失控，危及健康。</p>
+                <p class="claim-conf">置信度
+                  <span class="bar"><i style="width:94%"></i></span>94% · 命中 3 个权威源
+                </p>
+                <div class="claim-extra">
+                  <div class="sources">
+                    <p class="sl">权威出处（点击可查原文）</p>
+                    <a class="src" onclick="toast('演示稿：跳转原文链接')">
+                      <span class="li">🔗</span>
+                      <span><span class="sname">澎湃新闻｜辟谣：红酒加洋葱可降血脂？不靠谱！</span><span class="auth">权威媒体</span></span>
+                    </a>
+                    <a class="src" onclick="toast('演示稿：跳转原文链接')">
+                      <span class="li">🔗</span>
+                      <span><span class="sname">中国新闻网｜红酒泡洋葱只是食疗方，不能当药吃</span><span class="auth">权威媒体</span></span>
+                    </a>
+                  </div>
+                  <div class="quote">
+                    <span class="qs">中国新闻网 · 原文摘录</span>
+                    「红酒泡洋葱属于食疗范畴，不能替代药物。高血压患者应遵医嘱规律服药，切勿轻信偏方擅自停药。」
+                  </div>
+                </div>
+                <button class="claim-more"><span class="cm-txt"></span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 说法 4：查无实据（诚实态） -->
+          <div class="claim">
+            <div class="claim-head">
+              <div class="badge gray">？</div>
+              <div class="claim-main">
+                <div class="claim-q">「量子鞋垫能治糖尿病，三甲医院都在用」</div>
+                <span class="claim-tag gray">查无实据</span>
+                <p class="claim-plain">搜遍权威信源（政府辟谣平台、三甲医院、权威媒体），<b>找不到任何可靠证据</b>支持该功效，也没有任何三甲医院使用记录。<b>建议先别转、别买</b>；如家中已有人停用正规治疗，请尽快劝其就医。</p>
+                <p class="claim-conf">检索 7 个网页 · 0 条权威结果</p>
+                <div class="claim-extra">
+                  <div class="sources">
+                    <p class="sl">为什么是「查无实据」而不是直接判谣言？</p>
+                    <p style="font-size:13px;line-height:1.6;color:var(--ink-80);letter-spacing:-.2px;">
+                      谣侦只依据<b>真实检索到的权威信源</b>下判决。没有查到证据 ≠ 一定是假，但「查无实据」本身就是最诚实的提醒：<b>一条治病消息，如果权威源全都查不到，就不值得转发给家人。</b>
+                    </p>
+                  </div>
+                </div>
+                <button class="claim-more"><span class="cm-txt"></span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 悬浮操作条 -->
+      <div class="stickybar">
+        <button class="btn-ghost-pill" onclick="copyText()">复制文案</button>
+        <button class="btn-primary-pill" onclick="openSheet()">🧧 生成长辈版大字卡片</button>
+      </div>
+    </div>
+
+    <!-- ============ 长辈版卡片弹层 ============ -->
+    <div class="sheet-mask" id="sheetMask" onclick="closeSheet()"></div>
+    <div class="sheet" id="sheet">
+      <div class="grab"></div>
+      <div class="sheet-body">
+        <h3>长辈版 · 长按即可转发家庭群</h3>
+        <div class="poster">
+          <div class="p-kicker">— 家庭群消息查证结果 —</div>
+          <div class="p-verdict">这条别转</div>
+          <div class="p-said">味精加热会致癌、隔夜菜吃了会致癌、红酒泡洋葱能降血压代替吃药，还推荐了一款「量子鞋垫」治糖尿病。</div>
+          <ul class="p-fact">
+            <li>味精加热后产生的物质无毒，不会致癌，可以放心吃。</li>
+            <li>隔夜菜放冰箱、吃前热透，亚硝酸盐远低于标准，不致癌。</li>
+            <li>红酒泡洋葱是偏方，不能代替降压药，药千万不能停。</li>
+            <li>「量子鞋垫治糖尿病」查无出处，别买、别信。</li>
+          </ul>
+          <div class="p-src">查证出处：人民网 · 科普中国 · 中国新闻网 · 澎湃新闻 · 河北省食品检验研究院</div>
+          <div class="p-sign">孩子们用「谣侦」帮您查过了 ☺</div>
+        </div>
+        <div class="sheet-actions">
+          <button class="btn-ghost-pill" style="flex:1" onclick="toast('演示稿：真机调用系统分享 / 保存图片')">保存图片</button>
+          <button class="btn-primary-pill" style="flex:1" onclick="copyText()">复制文字版</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<p class="demo-note">
+  设计规范：getdesign Apple DESIGN.md（SF Pro / Action Blue #0066cc / pill 按钮 / 毛玻璃悬浮条 / 暗色工作 tile）<br>
+  判决语义色采用 iOS HIG System Colors，仅承载结果信息 · 全部内容为 MVP 真实跑通案例
+</p>
+
+<script>
+/* ---------------- 视图切换 ---------------- */
+const views = {input:'view-input', live:'view-live', report:'view-report'};
+function show(v){
+  Object.values(views).forEach(id=>document.getElementById(id).classList.remove('show'));
+  document.getElementById(views[v]).classList.add('show');
+  document.getElementById('screen').scrollTop = 0;
+  document.getElementById('navBack').style.display = v==='input' ? 'none' : 'block';
+  const dark = v==='live';
+  document.getElementById('appnav').classList.toggle('on-dark', dark);
+  document.getElementById('statusbar').classList.toggle('on-dark', dark);
+  document.querySelectorAll('.demo-chip[data-jump]').forEach(c=>
+    c.classList.toggle('active', c.dataset.jump===v || (v==='card'&&c.dataset.jump==='card')));
+}
+function goInput(){closeSheet();show('input');}
+function goLive(){show('live');playTimeline();}
+function goReport(){show('report');}
+
+/* ---------------- 输入 ---------------- */
+const input = document.getElementById('composerInput');
+const goBtn = document.getElementById('goBtn');
+input.addEventListener('input',()=>{goBtn.disabled = !input.value.trim();});
+document.querySelectorAll('.mode-chip').forEach(c=>c.addEventListener('click',()=>{
+  document.querySelectorAll('.mode-chip').forEach(x=>x.classList.remove('sel'));
+  c.classList.add('sel');
+}));
+function fillSample(mode){
+  document.querySelectorAll('.mode-chip').forEach(x=>x.classList.toggle('sel', x.dataset.mode===mode));
+  const txt = {
+    text:'味精加热超过100度会致癌？隔夜菜含亚硝酸盐吃了一定致癌？红酒泡洋葱能降血压代替降压药？量子鞋垫能治糖尿病？',
+    link:'https://mp.weixin.qq.com/s/xxxx 医生绝对不会碰的6种食物',
+    img:'[群聊截图] 舅妈转发的三张养生图（已自动读图）'
+  };
+  input.value = txt[mode]; goBtn.disabled = false;
+  toast('已填入示例，点「核查」开始');
+}
+function startCheck(){ if(!input.value.trim())return; goLive(); }
+
+/* ---------------- 核查时间线（agent 事件流回放） ---------------- */
+const TL = [
+  {i:'🔍', t:'深度搜索「味精 焦谷氨酸钠 致癌」', d:'豆包深度搜索 · 返回 8 条结果', tag:'', tagTxt:''},
+  {i:'📖', t:'打开人民网原文核对', d:'people.com.cn —《味精加热后真的有毒吗？》', tag:'blue', tagTxt:'读取全文'},
+  {i:'⚠️', t:'发现信源分歧，启动第三方裁决', d:'搜狐号自媒体称「致癌」/ 人民网称「无毒」—— 自媒体只作线索，追加权威源', tag:'', tagTxt:''},
+  {i:'🔍', t:'追加搜索「焦谷氨酸钠 毒性 研究」', d:'科普中国 + 文献核验 · 返回 6 条结果', tag:'ok', tagTxt:'权威源一致'},
+  {i:'✅', t:'判决：味精加热不致癌（谣言）', d:'焦谷氨酸钠无毒；FAO 列为最安全类别。置信度 96%', tag:'ok', tagTxt:'已下判决'},
+  {i:'🔍', t:'核查「隔夜菜 亚硝酸盐 致癌」', d:'河北省食品检验研究院实验：冷藏 24h 远低于国标限量', tag:'ok', tagTxt:'已下判决 · 谣言'},
+  {i:'🔍', t:'核查「红酒泡洋葱 降血压 替代药物」', d:'中国新闻网 / 澎湃新闻：仅为食疗方，不能替代正规治疗', tag:'ok', tagTxt:'已下判决 · 谣言'},
+  {i:'🔍', t:'核查「量子鞋垫 治糖尿病」', d:'检索 7 个网页 · 政府辟谣平台 / 三甲医院 / 央媒 均 0 条结果', tag:'', tagTxt:''},
+  {i:'❓', t:'判决：查无实据，建议先别转', d:'不编造结论——权威源全部缺席，本身就是最诚实的提醒', tag:'blue', tagTxt:'诚实态'},
+];
+let tlTimers = [];
+function playTimeline(){
+  tlTimers.forEach(clearTimeout); tlTimers = [];
+  const box = document.getElementById('timeline');
+  const think = document.getElementById('thinking');
+  const done = document.getElementById('liveDone');
+  box.innerHTML = TL.map((s,idx)=>`
+    <div class="tl-item" id="tl${idx}">
+      <div class="tl-rail"><div class="tl-dot">${s.i}</div><div class="tl-line"></div></div>
+      <div class="tl-body">
+        <div class="tl-t">${s.t}</div>
+        <div class="tl-d">${s.d}</div>
+        ${s.tag?`<span class="tl-tag ${s.tag}">${s.tagTxt}</span>`:''}
+      </div>
+    </div>`).join('');
+  done.classList.remove('show');
+  TL.forEach((_,idx)=>{
+    tlTimers.push(setTimeout(()=>{
+      const el = document.getElementById('tl'+idx);
+      document.querySelectorAll('.tl-item').forEach(x=>x.classList.remove('on'));
+      el.classList.add('on');
+      think.classList.add('show');
+      document.getElementById('thinkTxt').textContent =
+        idx < TL.length-1 ? '正在思考：证据够不够？要不要换关键词再搜…' : '汇总判决中…';
+      if(idx>0) document.getElementById('tl'+(idx-1)).classList.replace('on','done');
+      el.scrollIntoView({behavior:'smooth', block:'center'});
+    }, 700 + idx*1600));
+  });
+  tlTimers.push(setTimeout(()=>{
+    const last = document.getElementById('tl'+(TL.length-1));
+    if(last){last.classList.remove('on');last.classList.add('done');}
+    think.classList.remove('show');
+    done.classList.add('show');
+    done.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 700 + TL.length*1600 + 400));
+}
+
+/* ---------------- 报告卡片展开 ---------------- */
+document.querySelectorAll('.claim-more').forEach(btn=>{
+  btn.addEventListener('click',()=>btn.closest('.claim').classList.toggle('open'));
+});
+
+/* ---------------- 长辈卡片弹层 ---------------- */
+function openSheet(){document.getElementById('sheetMask').classList.add('show');document.getElementById('sheet').classList.add('show');}
+function closeSheet(){document.getElementById('sheetMask').classList.remove('show');document.getElementById('sheet').classList.remove('show');}
+function copyText(){
+  const t = '【家庭群消息查证结果】这条别转：\n消息里说味精加热致癌、隔夜菜致癌、红酒泡洋葱能代替降压药、量子鞋垫能治糖尿病。\n查证结果：\n✓ 味精加热后产生的物质无毒，不致癌；\n✓ 隔夜菜冷藏+热透，亚硝酸盐远低于标准，不致癌；\n✓ 红酒泡洋葱是偏方，不能代替降压药，药不能停；\n✓ 量子鞋垫治糖尿病查无出处，别买别信。\n出处：人民网、科普中国、中国新闻网、澎湃新闻、河北省食品检验研究院。\n——用「谣侦」查过了 ☺';
+  if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>toast('✓ 已复制，去微信粘贴吧')).catch(()=>toast('复制失败，请长按选择文本'));
+  else toast('请长按文本手动复制');
+}
+
+/* ---------------- toast ---------------- */
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------------- 演示控制条 ---------------- */
+document.querySelectorAll('.demo-chip[data-jump]').forEach(c=>c.addEventListener('click',()=>{
+  const j = c.dataset.jump;
+  if(j==='card'){show('report');openSheet();}
+  else {closeSheet();show(j); if(j==='live')playTimeline();}
+}));
+</script>
+</body>
+</html>
