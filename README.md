@@ -47,6 +47,17 @@ PORT=8770 .venv/bin/python app.py
 
 > 手机上用：同一局域网访问 `http://<你电脑的IP>:8770`，或部署到任意服务器。
 
+## 一键部署到 Vercel（在线 demo）
+
+项目已带 `api/index.py` + `vercel.json`，是 serverless 友好的**单请求流式**架构（无需常驻进程/内存态）：
+
+1. 把本仓库推到 GitHub；
+2. Vercel → **Add New → Project → Import** 这个仓库（Framework 选 Other，无需 Build Command）；
+3. 直接 Deploy。`vercel.json` 已把所有路由指向 `api/index.py`（FastAPI ASGI 入口），静态前端由同一 app 提供。
+4. **Key 不用配**：demo 走 BYOK，访客在底部「设置」Tab 填自己的火山引擎 Key 即可；若想让访客免填，可在 Vercel 环境变量里配 `ARK_API_KEY` / `WEB_SEARCH_API_KEY`（费用走你的账号）。
+
+> 注意：Vercel Hobby 单次函数上限 60 秒，复杂长文/多图核查可能超时，建议 demo 以单条说法、截图为主；本地或自部署无此限制。
+
 ## 配置
 
 | 环境变量 | 说明 |

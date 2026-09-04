@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """谣侦 v2 主编排：输入 → 抽取主张 → 逐条 agent 核查 → 汇总报告 + 长辈卡片。
 
-全程通过 emit(event) 推送结构化事件，供前端 SSE 实时渲染 agent 工作流。
+_run_pipeline(kind, content, emit) 是核心逻辑，emit(event) 同步推事件；
+run_check_stream 用队列+线程把它桥接成生成器（serverless 单请求流式友好）；
+run_check 直接收集事件到列表（供本地脚本/测试）。
 事件类型：status | extract | claim_start | step | claim_done | done | error
 """
-import base64
+import queue
+import threading
 import time
 
 from . import agent
+from . import credentials
 from . import llm
 from .pipeline import extract_claims, extract_claims_from_image
 from .fetch import fetch_url
@@ -24,34 +28,40 @@ CARD_SYS = """你要为家庭群写一张「长辈版查证卡片」。给你若
 facts 里不要出现置信度、链接、英文；语气尊重，不说'你被骗了'。"""
 
 
-def _emit(queue, ev):
-    queue.append(ev)
-
-
-def run_check(kind, content, events):
-    """kind: text | url | image。content: 文本/URL/图片 data URI。返回 report dict。"""
+def _run_pipeline(kind, content, emit):
+    """核心管线。emit(event_dict) 同步推送。返回最终 report。"""
     t0 = time.time()
-    ev = lambda e: _emit(events, e)
     report = {"source": {"kind": kind}, "claims": [], "stats": {}}
 
     # ---- 1. 取正文 / 读图 ----
     if kind == "url":
         url = content.strip()
-        ev({"type": "status", "icon": "🔗", "title": "正在抓取链接内容", "detail": url[:60]})
-        title, text = fetch_url(url)
+        emit({"type": "status", "icon": "🔗", "title": "正在抓取链接内容", "detail": url[:60]})
+        try:
+            title, text = fetch_url(url)
+        except Exception as e:  # noqa
+            emit({"type": "error", "icon": "⚠️", "title": "链接抓取失败",
+                  "detail": f"打不开这个链接：{str(e)[:80]}（可复制正文文字来查）"})
+            report["overall"] = {"headline": "链接打不开", "lead": "抓取失败"}
+            return report
         report["source"].update({"title": title, "url": url, "chars": len(text)})
-        ev({"type": "status", "icon": "📄", "title": f"已抓到《{title[:28]}》",
-            "detail": f"正文 {len(text)} 字，准备拆说法"})
+        emit({"type": "status", "icon": "📄", "title": f"已抓到《{title[:28]}》",
+              "detail": f"正文 {len(text)} 字，准备拆说法"})
         claims, meta = extract_claims(text)
     elif kind == "image":
-        ev({"type": "status", "icon": "🖼️", "title": "正在读图、识别文字", "detail": "多模态视觉理解中…"})
-        # content 可能是 data URI 或裸 base64
+        emit({"type": "status", "icon": "🖼️", "title": "正在读图、识别文字", "detail": "多模态视觉理解中…"})
         uri = content if content.startswith("data:") else f"data:image/png;base64,{content}"
-        claims, ocr_text, meta = extract_claims_from_image(uri)
+        try:
+            claims, ocr_text, meta = extract_claims_from_image(uri)
+        except Exception as e:  # noqa
+            emit({"type": "error", "icon": "⚠️", "title": "读图失败",
+                  "detail": f"视觉识别出错：{str(e)[:80]}"})
+            report["overall"] = {"headline": "读图失败", "lead": "视觉识别出错"}
+            return report
         report["source"]["ocr_text"] = ocr_text
         report["source"]["title"] = "（上传的截图/图片）"
-        ev({"type": "status", "icon": "👁️", "title": f"读图完成，识别出 {len(ocr_text)} 字",
-            "detail": "正在从中拆出可核查的说法"})
+        emit({"type": "status", "icon": "👁️", "title": f"读图完成，识别出 {len(ocr_text)} 字",
+              "detail": "正在从中拆出可核查的说法"})
     else:
         report["source"]["title"] = "（粘贴的文本）"
         claims, meta = extract_claims(content)
@@ -59,24 +69,25 @@ def run_check(kind, content, events):
     claims = claims[:6]
     report["stats"]["n_claims"] = len(claims)
     if not claims:
-        ev({"type": "status", "icon": "🤔", "title": "没有找到可核查的事实主张",
-            "detail": "这段内容里没有明显的健康/安全断言，换一段试试？"})
+        emit({"type": "status", "icon": "🤔", "title": "没有找到可核查的事实主张",
+              "detail": "这段内容里没有明显的健康/安全断言，换一段试试？"})
         report["overall"] = {"headline": "暂无可核查说法", "lead": "内容里没有发现可验证的断言。"}
         report["stats"]["elapsed_s"] = round(time.time() - t0, 1)
+        emit({"type": "done", "report": report})
         return report
 
-    ev({"type": "extract", "icon": "✂️",
-        "title": f"拆出 {len(claims)} 条可核查说法",
-        "detail": "开始逐条深度核查：模型自主搜索、打开原文、裁决矛盾"})
+    emit({"type": "extract", "icon": "✂️",
+          "title": f"拆出 {len(claims)} 条可核查说法",
+          "detail": "开始逐条深度核查：模型自主搜索、打开原文、裁决矛盾"})
 
     # ---- 2. 逐条 agent 核查 ----
     tot_search = tot_open = n_auth = 0
     for i, c in enumerate(claims):
         q = c["claim"] if isinstance(c, dict) else c
-        ev({"type": "claim_start", "index": i, "title": f"第 {i+1}/{len(claims)} 条：{q[:30]}"})
+        emit({"type": "claim_start", "index": i, "title": f"第 {i+1}/{len(claims)} 条：{q[:30]}"})
         try:
-            verdict = agent.verify_claim_agentic(q, lambda e: ev(e), claim_index=i)
-        except Exception as e:  # 单条核查失败不拖垮整份报告（网络/模型超时）
+            verdict = agent.verify_claim_agentic(q, emit, claim_index=i)
+        except Exception as e:  # noqa  单条失败不拖垮整份报告
             verdict = {"rating": "查无实据", "confidence": 0.0,
                        "plain": "这条核查时网络或模型服务超时，没能拿到证据，建议先别转、稍后重试。",
                        "evidence": f"agent 核查异常：{str(e)[:120]}", "conflict": "", "claim": q,
@@ -86,9 +97,8 @@ def run_check(kind, content, events):
         tot_search += verdict["stats"]["searches"]
         tot_open += verdict["stats"]["opened"]
         n_auth += len([s for s in verdict["sources"] if s["is_authoritative"]])
-        ev({"type": "claim_done", "index": i,
-            "rating": verdict["rating"], "title": q[:30]})
-        time.sleep(0.2)
+        emit({"type": "claim_done", "index": i, "rating": verdict["rating"], "title": q[:30]})
+        time.sleep(0.15)
 
     # ---- 3. 汇总判决 ----
     ratings = [c["rating"] for c in report["claims"]]
@@ -116,7 +126,7 @@ def run_check(kind, content, events):
             for i, c in enumerate(report["claims"]))
         card_obj, _ = llm.chat_json(CARD_SYS, f"核查结果：\n{basis}", max_tokens=900, timeout=120)
         report["elder_card"] = card_obj
-    except Exception as e:  # noqa
+    except Exception:  # noqa
         report["elder_card"] = {
             "headline": headline,
             "said": "（转发内容中的若干养生说法）",
@@ -124,9 +134,38 @@ def run_check(kind, content, events):
             "closing": "孩子们帮您查证过了 ☺",
         }
 
-    report["stats"].update({
-        "searches": tot_search, "opened": tot_open,
-        "authority_sources": n_auth,
-        "elapsed_s": round(time.time() - t0, 1),
-    })
+    report["stats"].update({"searches": tot_search, "opened": tot_open,
+                            "authority_sources": n_auth,
+                            "elapsed_s": round(time.time() - t0, 1)})
+    emit({"type": "done", "report": report})
     return report
+
+
+def run_check_stream(kind, content, ark_key=None, search_key=None):
+    """生成器：工作线程跑管线、事件进队列，这里实时 yield，直到 done。
+    ark_key/search_key 为请求级 BYOK 凭证（在工作线程内生效）。"""
+    q = queue.Queue()
+    sentinel = object()
+
+    def worker():
+        try:
+            credentials.use_keys(ark_key=ark_key, search_key=search_key)
+            _run_pipeline(kind, content, q.put)
+        except Exception as e:  # noqa
+            q.put({"type": "error", "icon": "⚠️", "title": "核查中断", "detail": str(e)[:120]})
+        finally:
+            credentials.clear()
+            q.put(sentinel)
+
+    threading.Thread(target=worker, daemon=True).start()
+    while True:
+        item = q.get()
+        if item is sentinel:
+            break
+        yield item
+
+
+def run_check(kind, content, events):
+    """非流式：在当前线程收集事件到 events 列表，返回最终 report。供本地脚本/测试用。
+    （凭证由调用方所在线程通过 credentials.use_keys 设置，本地脚本用环境变量兜底。）"""
+    return _run_pipeline(kind, content, events.append)

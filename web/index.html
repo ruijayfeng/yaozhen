@@ -734,12 +734,28 @@ async function startCheck(){
   $('liveSource').style.display='none'; $('thinking').classList.add('show'); claimIdx=-1;
   refreshIcons();
   try{
-    const r=await fetch('/api/check',{method:'POST',
+    const resp=await fetch('/api/check',{method:'POST',
       headers:{'Content-Type':'application/json', ...authHeaders()},
       body:JSON.stringify({kind,content})});
-    const d=await r.json();
-    if(d.error){ showError(d.error); return; }
-    listen(d.job_id);
+    if(!resp.ok || !resp.body){ showError('服务异常（HTTP '+resp.status+'）'); return; }
+    const reader=resp.body.getReader(), dec=new TextDecoder();
+    let buf='';
+    while(true){
+      const {done,value}=await reader.read();
+      if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let idx;
+      while((idx=buf.indexOf('\n\n'))>=0){
+        const chunk=buf.slice(0,idx); buf=buf.slice(idx+2);
+        const line=chunk.split('\n').find(l=>l.trimStart().startsWith('data:'));
+        if(!line) continue;
+        let ev; try{ ev=JSON.parse(line.slice(line.indexOf('data:')+5).trim()); }catch{ continue; }
+        if(ev.type==='done'){ finish(ev.report, ev.error||null); return; }
+        if(ev.type==='error'){ showError((ev.title||'核查出错')+'：'+(ev.detail||'')); return; }
+        handleEvent(ev);
+      }
+    }
+    showError('连接提前结束，请重试');
   }catch(e){ showError('网络错误：'+e.message); }
 }
 function showError(msg){

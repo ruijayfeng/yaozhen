@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
-"""谣侦 v2 —— FastAPI + SSE agent 事件流。
-启动：.venv/bin/uvicorn app:app --port 8770   或  .venv/bin/python app.py
+"""谣侦 yaozhen —— FastAPI + 单请求流式 SSE（本地 & Vercel serverless 通用）。
+
+启动（本地）：.venv/bin/python app.py   → http://127.0.0.1:8770
+Vercel：api/index.py 直接 `from app import app` 作为 ASGI 入口。
 """
-import asyncio
 import json
 import os
-import queue
-import threading
-import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import iterate_in_threadpool
 
-from engine.run import run_check
+from engine.run import run_check_stream
 from engine import credentials, llm, search as search_mod
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(BASE, "web")
 
 app = FastAPI(title="谣侦 yaozhen")
-
-JOBS = {}  # job_id -> {"events": list, "done": bool, "report": dict, "error": str|None}
 
 
 class CheckReq(BaseModel):
@@ -31,40 +28,34 @@ class CheckReq(BaseModel):
     image: str = ""       # data URI 或 base64（image 模式）
 
 
-def _worker(job_id, kind, content, ark_key, search_key):
-    job = JOBS[job_id]
-    try:
-        # 请求级凭证（BYOK）：本工作线程内生效，用完随线程回收，不落盘
-        credentials.use_keys(ark_key=ark_key, search_key=search_key)
-        report = run_check(kind, content, job["events"])
-        job["report"] = report
-    except Exception as e:  # noqa
-        import traceback
-        traceback.print_exc()
-        job["error"] = str(e)
-        job["events"].append({"type": "error", "icon": "⚠️",
-                              "title": "核查中断", "detail": str(e)[:120]})
-    finally:
-        credentials.clear()
-    job["done"] = True
-
-
 @app.post("/api/check")
-def check(req: CheckReq, request: Request):
+async def check(req: CheckReq, request: Request):
+    """单请求流式：POST 进来即持续吐 SSE 事件，最后一个是 done{report}。
+    用户自带 key（BYOK）从请求头取，交给管线在其工作线程内使用（serverless 无状态友好）。"""
     content = (req.content or req.image or "").strip()
     if not content:
-        return {"error": "内容为空"}
+        async def empty():
+            yield f"data: {json.dumps({'type':'error','title':'内容为空','detail':'请先粘贴要核查的内容'}, ensure_ascii=False)}\n\n"
+        return StreamingResponse(empty(), media_type="text/event-stream")
     kind = req.kind
     if not kind:
-        kind = "url" if content.startswith("http") else ("image" if content.startswith("data:image") or len(content) > 2000 else "text")
-    # 用户自带 key（BYOK），从请求头取；空则后端回落到环境变量
+        kind = "url" if content.startswith("http") else (
+            "image" if content.startswith("data:image") or len(content) > 2000 else "text")
     ark_key = request.headers.get("x-ark-key", "").strip()
     search_key = request.headers.get("x-search-key", "").strip()
-    job_id = uuid.uuid4().hex[:12]
-    JOBS[job_id] = {"events": [], "done": False, "report": None, "error": None}
-    threading.Thread(target=_worker, args=(job_id, kind, content, ark_key, search_key),
-                     daemon=True).start()
-    return {"job_id": job_id}
+
+    def gen():
+        try:
+            for ev in run_check_stream(kind, content, ark_key, search_key):
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        except Exception as e:  # noqa
+            yield f"data: {json.dumps({'type':'error','icon':'⚠️','title':'核查中断','detail':str(e)[:120]}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        iterate_in_threadpool(gen()),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                 "Connection": "keep-alive"})
 
 
 class VerifyReq(BaseModel):
@@ -95,35 +86,13 @@ def verify_keys(req: VerifyReq):
     return out
 
 
-@app.get("/api/stream/{job_id}")
-async def stream(job_id: str):
-    job = JOBS.get(job_id)
-    if not job:
-        return StreamingResponse(iter([f"data: {json.dumps({'error': 'job not found'})}\n\n"]),
-                                 media_type="text/event-stream")
-
-    async def gen():
-        sent = 0
-        while True:
-            while sent < len(job["events"]):
-                ev = job["events"][sent]
-                sent += 1
-                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-            if job["done"]:
-                yield f"data: {json.dumps({'type': 'done', 'report': job.get('report'), 'error': job.get('error')}, ensure_ascii=False)}\n\n"
-                return
-            await asyncio.sleep(0.35)
-
-    return StreamingResponse(gen(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-
 @app.get("/")
 def index():
     return FileResponse(os.path.join(WEB, "index.html"))
 
 
 app.mount("/static", StaticFiles(directory=WEB), name="web")
+
 
 if __name__ == "__main__":
     import uvicorn
