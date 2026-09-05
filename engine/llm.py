@@ -79,7 +79,9 @@ def _call(messages, max_tokens=2000, timeout=120, retries=2):
                              "total_tokens": usage.get("total_tokens", 0)}
             except Exception as e:  # noqa
                 last_err = e
-                time.sleep(2 * (attempt + 1))
+                # 429 限流：指数退避（2/4/8s），比普通错误更长，给限流窗口恢复时间
+                is_429 = "429" in str(e)
+                time.sleep((4 if is_429 else 2) * (attempt + 1))
     raise LLMError(f"LLM 调用失败: {last_err}")
 
 
