@@ -166,6 +166,7 @@ a{color:var(--primary);text-decoration:none;}
 .tl-tag i{width:12px;height:12px;}
 .tl-tag.ok{background:rgba(52,199,89,.16);color:#5ee689;}
 .tl-tag.blue{background:rgba(10,132,255,.18);color:#7db8ff;}
+.tl-tag.warn{background:rgba(255,59,48,.18);color:#ff6b60;}
 .live-think{display:none;align-items:center;gap:8px;margin:4px 18px 0;padding-left:46px;font-size:13px;color:rgba(255,255,255,.5);}
 .live-think.show{display:flex;}
 .live-think .dots{display:inline-flex;gap:4px;}
@@ -392,6 +393,16 @@ a{color:var(--primary);text-decoration:none;}
 .toast i{width:16px;height:16px;flex-shrink:0;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 input[type=file]{display:none;}
+/* 视觉鉴伪卡片（报告页，浅色） */
+.vis-card{background:#fff;border:1.5px solid rgba(255,59,48,.28);border-radius:14px;padding:14px 16px;margin:14px 0 4px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
+.vis-card .vc-head{display:flex;align-items:center;gap:7px;font-size:15px;font-weight:700;color:#1d1d1f;flex-wrap:wrap;}
+.vis-card .vc-head i{width:18px;height:18px;color:#ff3b30;}
+.vis-card .vc-src{font-size:12.5px;font-weight:600;color:#ff3b30;background:rgba(255,59,48,.1);padding:2px 9px;border-radius:var(--r-pill,999px);}
+.vis-card .vc-note{font-size:12.5px;color:#6e6e73;margin:7px 0 4px;line-height:1.55;}
+.vis-card .vc-flag{display:flex;align-items:flex-start;gap:7px;font-size:12.5px;color:#b4281f;line-height:1.5;margin-top:7px;}
+.vis-card .vc-flag i{width:14px;height:14px;flex-shrink:0;margin-top:2px;color:#ff9500;}
+.vis-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#ff3b30;background:rgba(255,59,48,.1);padding:2px 9px;border-radius:var(--r-pill,999px);margin-bottom:5px;}
+.vis-badge i{width:12px;height:12px;}
 </style>
 </head>
 <body>
@@ -778,7 +789,7 @@ function tlIcon(name){ return `<i data-lucide="${name}"></i>`; }
 function addTL(iconName, title, detail, tag, tagText, sep=false){
   const box=$('timeline'); const div=document.createElement('div');
   div.className='tl-item'+(sep?' claimsep':'');
-  const tagHtml = tag ? `<span class="tl-tag ${tag==='ok'?'ok':tag==='blue'?'blue':''}">${tlIcon(tag==='ok'?'check-circle-2':tag==='blue'?'help-circle':'alert-triangle')}${tagText||''}</span>`:'';
+  const tagHtml = tag ? `<span class="tl-tag ${tag==='ok'?'ok':tag==='blue'?'blue':tag==='warn'?'warn':''}">${tlIcon(tag==='ok'?'check-circle-2':tag==='blue'?'help-circle':'alert-triangle')}${tagText||''}</span>`:'';
   const dotInner = sep ? (iconName||'•') : tlIcon(iconName||'dot');
   div.innerHTML=`<div class="tl-rail"><div class="tl-dot">${dotInner}</div><div class="tl-line"></div></div>
     <div class="tl-body"><div class="tl-t">${title||''}</div>${detail?`<div class="tl-d">${detail}</div>`:''}${tagHtml}</div>`;
@@ -788,7 +799,12 @@ function addTL(iconName, title, detail, tag, tagText, sep=false){
 }
 function handleEvent(ev){
   const iconFor = t => ({search:'search',open:'file-search',judge:'gavel',status:'file-text',extract:'scissors'})[t]||'circle-dot';
-  if(ev.type==='status' || ev.type==='extract'){
+  if(ev.type==='visual'){
+    addTL('scan-eye', ev.title, ev.detail, ev.tag, ev.tag_text);
+    (ev.flags||[]).forEach(f=>addTL('flag-triangle-alert', '画面可疑点', f));
+  } else if(ev.type==='visual_flag'){
+    addTL('flag-triangle-alert', '画面可疑点', ev.text);
+  } else if(ev.type==='status' || ev.type==='extract'){
     if(ev.type==='status' && claimIdx<0){
       $('liveSource').style.display='flex';
       $('lsText').innerHTML=`<b>${ev.title}</b><br>${ev.detail||''}`;
@@ -839,8 +855,16 @@ function renderReport(r){
       <span><i data-lucide="file-search"></i>${st.opened||0} 篇原文</span>
       <span><i data-lucide="landmark"></i>${st.authority_sources||0} 权威</span>
       <span><i data-lucide="timer"></i>${st.elapsed_s||0}s</span>
-    </div></div>
-  <div class="claims">`;
+    </div></div>`;
+  const vis=r.visual;
+  if(vis && (vis.purported_source || (vis.visual_flags||[]).length)){
+    html+=`<div class="vis-card">
+      <div class="vc-head"><i data-lucide="scan-eye"></i><b>视觉鉴伪</b>${vis.purported_source?`<span class="vc-src">这张图自称来自「${esc(vis.purported_source)}」</span>`:''}</div>
+      ${vis.image_note?`<div class="vc-note">${esc(vis.image_note)}</div>`:''}
+      ${(vis.visual_flags||[]).map(f=>`<div class="vc-flag"><i data-lucide="flag-triangle-alert"></i><span>${esc(f)}</span></div>`).join('')}
+    </div>`;
+  }
+  html+=`<div class="claims">`;
   r.claims.forEach((c,i)=>{
     const rt=RATING[c.rating]||RATING['查无实据'];
     const pct=Math.round((c.confidence||0)*100);
@@ -866,6 +890,7 @@ function renderReport(r){
       <div class="claim-head">
         <div class="c-badge ${rt.color}"><i data-lucide="${rt.icon}"></i></div>
         <div class="claim-main">
+          ${c.visual?`<div class="vis-badge"><i data-lucide="scan-eye"></i>视觉鉴伪 · 假借权威</div>`:''}
           <div class="claim-q">「${esc(c.claim)}」</div>
           <span class="claim-tag ${rt.color}"><i data-lucide="${rt.icon}"></i>${esc(c.rating)}</span>
           <p class="claim-plain">${esc(c.plain)}</p>

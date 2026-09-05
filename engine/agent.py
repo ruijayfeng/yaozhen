@@ -16,6 +16,7 @@ import time
 from . import authority
 from . import llm
 from . import search as search_mod
+from . import vision
 
 MAX_STEPS = 6          # 每条主张最多 6 个工具动作
 MAX_OPEN = 2           # 最多打开 2 篇原文
@@ -90,14 +91,24 @@ def _safe_json(text):
     return None
 
 
-def verify_claim_agentic(claim, emit, claim_index=0):
+def verify_claim_agentic(claim, emit, claim_index=0, visual_ctx=None):
     """对一条主张跑 agent 循环。
     emit(event_dict) 推送时间线事件。返回证据卡 + 判决 dict。
+    visual_ctx: 若给（dict），表示这是图片「假借权威」核查，使用视觉专用系统提示词，
+                并在判决上挂视觉红旗。键：purported_source / visual_flags / image_note。
     """
     t0 = time.time()
+    sys_prompt = vision.IMPERSONATION_SYS if visual_ctx else AGENT_SYS
+    user_head = ("待核查的是一张冒充权威的图片：\n"
+                 f"- 图片自称来自：{visual_ctx.get('purported_source','')}\n"
+                 f"- 画面描述：{visual_ctx.get('image_note','')}\n"
+                 f"- 视觉可疑信号：{('；'.join(visual_ctx.get('visual_flags',[])) or '无明显信号')}\n\n"
+                 "请联网核实该机构是否真的发布过这条通知，以及图中说法的真伪。先搜索，证据充分后 judge。") \
+        if visual_ctx else \
+        f"待核查主张：{claim}\n\n开始核查。先搜索，证据充分后 judge。"
     messages = [
-        {"role": "system", "content": AGENT_SYS},
-        {"role": "user", "content": f"待核查主张：{claim}\n\n开始核查。先搜索，证据充分后 judge。"},
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": user_head},
     ]
     seen_results = []          # 全部搜索结果（去重）
     seen_urls = set()
@@ -233,6 +244,13 @@ def verify_claim_agentic(claim, emit, claim_index=0):
     if verdict["rating"] == "查无实据":
         verdict["confidence"] = 0.0
     verdict["confidence"] = round(min(1.0, max(0.0, verdict["confidence"])), 2)
+
+    # 视觉鉴伪：挂上画面红旗与冒充来源（供前端「视觉鉴伪」段展示）
+    if visual_ctx:
+        verdict["visual"] = True
+        verdict["purported_source"] = visual_ctx.get("purported_source", "")
+        verdict["visual_flags"] = visual_ctx.get("visual_flags", [])
+        verdict["claim"] = f"图片署名「{verdict['purported_source']}」发布通知" if verdict.get("purported_source") else claim
 
     # 判决事件
     icon = {"谣言": "🚫", "属实": "✅", "夸大": "⚠️"}.get(verdict["rating"], "❓")

@@ -13,7 +13,8 @@ import time
 from . import agent
 from . import credentials
 from . import llm
-from .pipeline import extract_claims, extract_claims_from_image
+from . import vision
+from .pipeline import extract_claims
 from .fetch import fetch_url
 
 CARD_SYS = """你要为家庭群写一张「长辈版查证卡片」。给你若干条说法的核查结果（判决+大白话）。
@@ -49,10 +50,10 @@ def _run_pipeline(kind, content, emit):
               "detail": f"正文 {len(text)} 字，准备拆说法"})
         claims, meta = extract_claims(text)
     elif kind == "image":
-        emit({"type": "status", "icon": "🖼️", "title": "正在读图、识别文字", "detail": "多模态视觉理解中…"})
+        emit({"type": "status", "icon": "🖼️", "title": "正在看图、识别文字", "detail": "多模态视觉理解中…"})
         uri = content if content.startswith("data:") else f"data:image/png;base64,{content}"
         try:
-            claims, ocr_text, meta = extract_claims_from_image(uri)
+            claims, ocr_text, visual, vmeta = vision.analyze_image(uri)
         except Exception as e:  # noqa
             emit({"type": "error", "icon": "⚠️", "title": "读图失败",
                   "detail": f"视觉识别出错：{str(e)[:80]}"})
@@ -60,8 +61,25 @@ def _run_pipeline(kind, content, emit):
             return report
         report["source"]["ocr_text"] = ocr_text
         report["source"]["title"] = "（上传的截图/图片）"
-        emit({"type": "status", "icon": "👁️", "title": f"读图完成，识别出 {len(ocr_text)} 字",
-              "detail": "正在从中拆出可核查的说法"})
+        report["visual"] = visual
+        flags = visual.get("visual_flags", [])
+        src = visual.get("purported_source", "")
+        # 视觉鉴伪事件：它自称是谁 + 画面红旗
+        emit({"type": "visual", "icon": "🎭",
+              "title": (f"这张图自称来自「{src}」" if src else "看图完成，未发现冒用权威署名"),
+              "detail": (visual.get("image_note") or "")[:80],
+              "flags": flags,
+              "tag": "warn" if flags else "ok",
+              "tag_text": f"{len(flags)} 处可疑" if flags else "画面正常"})
+        for fl in flags[:4]:
+            emit({"type": "visual_flag", "text": fl})
+        # 假借权威 → 作为一条特殊主张，稍后用专用 agent 搜索取证
+        imp = vision.impersonation_claim(visual)
+        if imp:
+            claims = [imp] + claims
+        emit({"type": "status", "icon": "👁️",
+              "title": f"读图完成，识别出 {len(ocr_text)} 字" + (f"，拆出 {len(claims)} 条待核" if claims else ""),
+              "detail": ("画面自称权威来源，将联网核实该通知真伪" if imp else "正在从中拆出可核查的说法")})
     else:
         report["source"]["title"] = "（粘贴的文本）"
         claims, meta = extract_claims(content)
@@ -84,15 +102,28 @@ def _run_pipeline(kind, content, emit):
     tot_search = tot_open = n_auth = 0
     for i, c in enumerate(claims):
         q = c["claim"] if isinstance(c, dict) else c
-        emit({"type": "claim_start", "index": i, "title": f"第 {i+1}/{len(claims)} 条：{q[:30]}"})
+        is_imp = isinstance(c, dict) and c.get("impersonation")
+        emit({"type": "claim_start", "index": i,
+              "title": (f"第 {i+1}/{len(claims)} 条 · 视觉鉴伪：{q[:28]}" if is_imp
+                        else f"第 {i+1}/{len(claims)} 条：{q[:30]}")})
         try:
-            verdict = agent.verify_claim_agentic(q, emit, claim_index=i)
+            if is_imp:
+                visual_ctx = {"purported_source": c.get("purported_source", ""),
+                              "visual_flags": c.get("visual_flags", []),
+                              "image_note": report.get("visual", {}).get("image_note", "")}
+                verdict = agent.verify_claim_agentic(q, emit, claim_index=i, visual_ctx=visual_ctx)
+            else:
+                verdict = agent.verify_claim_agentic(q, emit, claim_index=i)
         except Exception as e:  # noqa  单条失败不拖垮整份报告
-            verdict = {"rating": "查无实据", "confidence": 0.0,
-                       "plain": "这条核查时网络或模型服务超时，没能拿到证据，建议先别转、稍后重试。",
-                       "evidence": f"agent 核查异常：{str(e)[:120]}", "conflict": "", "claim": q,
-                       "sources": [], "authority_hit": False,
-                       "stats": {"searches": 0, "opened": 0, "results": 0, "elapsed_s": 0}}
+            if is_imp:
+                verdict = vision.verdict_from_visual_fallback(report.get("visual", {}),
+                                                              report["source"].get("ocr_text", ""))
+            else:
+                verdict = {"rating": "查无实据", "confidence": 0.0,
+                           "plain": "这条核查时网络或模型服务超时，没能拿到证据，建议先别转、稍后重试。",
+                           "evidence": f"agent 核查异常：{str(e)[:120]}", "conflict": "", "claim": q,
+                           "sources": [], "authority_hit": False,
+                           "stats": {"searches": 0, "opened": 0, "results": 0, "elapsed_s": 0}}
         report["claims"].append(verdict)
         tot_search += verdict["stats"]["searches"]
         tot_open += verdict["stats"]["opened"]
